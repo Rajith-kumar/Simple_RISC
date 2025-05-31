@@ -1,0 +1,226 @@
+// Pipeline Fetch Stage Module
+// Handles instruction fetching and branch redirection
+
+// 2:1 Multiplexer with Asynchronous Reset
+// Selects between two 32-bit inputs with priority on reset
+module mux2x1(x,z,sel,rst,y );
+input [31:0]x,z;
+input sel,rst;
+output [31:0]y;
+
+assign y = ( rst )? 0 : 
+            (sel == 0)? x : z; // sel=0 selects x, sel=1 selects z
+endmodule
+
+// Holds the current program counter value.
+// Updates to pcnext on clock edge, resets to 0 on rst
+module program_counter(clk,pc_isr,interrupt,add_stall,rst,pcnext,pc);
+input [31:0]pcnext;
+input clk,rst,add_stall;
+input interrupt; //interrupt high
+input [31:0]pc_isr; //addresss of the isr
+output reg [31:0]pc;
+
+always@(posedge clk)
+begin
+    if(rst)
+        begin
+            pc <= 32'd64; 
+        end
+    /*else if(!add_stall)
+        begin
+            pc <= pcnext;   
+        end*/
+    else if(add_stall)
+        begin
+            pc <= pc - 1  ;
+        end
+    else if(interrupt)
+        begin
+            pc <= pc_isr;
+        end  
+    else if(!add_stall)
+        begin
+            pc <= pcnext;   
+        end
+             
+end
+
+    
+endmodule
+
+//-------------------------
+// PC + 4 Adder
+//-------------------------
+module pc_plus4(pc,pcplus4);
+input [31:0] pc;
+output reg [31:0] pcplus4;
+always @(*)
+begin
+    pcplus4 = pc + 1; // Computes pcplus4 = pc + 4 (next sequential instruction)
+end
+endmodule
+
+// Stores program instructions. Indexed by address.
+// Outputs the instruction at the given address.
+module instruction_memory(address,instruction);
+input [31:0]address;
+output reg [31:0]instruction;
+
+
+reg [31:0]i_mem[255:0];// 256-entry memory   
+integer i ,file,status;
+reg [31:0]inst;
+/*initial
+begin
+/// Initialize memory with instructions from a file
+       file = $fopen("C:\\Users\\rajit\\OneDrive\\Desktop\\output.txt", "r");
+        if (file == 0) begin
+            $display("Error opening instruction file.");
+            $finish;
+        end
+
+        i = 0;
+        while (!$feof(file)) begin
+            status = $fscanf(file, "%b\n", inst);
+            if (status == 1) begin
+                i_mem[i] = inst;
+                i = i + 1;
+            end
+        end
+
+        $fclose(file);
+end
+*/
+ 
+initial 
+begin
+        // Sample program initialization
+        //memory stores the instruction to calculate the febonacci series till the number stored at r0 and store it in r1
+        i_mem[0]  = 32'b01001000010000010000000000000000;   //mov r1,0
+        i_mem[1]  = 32'b0;
+        i_mem[2]  = 32'b0;
+        i_mem[3]  = 32'b0;
+        i_mem[4]  = 32'b00000001010011001000000000000000;  //mov r2,1
+        i_mem[5]  = 32'b0;
+        i_mem[6]  = 32'b0;
+        i_mem[7]  = 32'b0;
+        i_mem[8]  = 32'b00110000110001001000000000000000;  //mov r0,10
+        
+        i_mem[9]  = 32'b0;
+        i_mem[10]  = 32'b0;
+        i_mem[11]  = 32'b0;
+        i_mem[12] = 32'b01001000100000001100000000000000;   //cmp r0,0 
+        i_mem[13]  = 32'b0;
+        i_mem[14]  = 32'b0;
+        i_mem[15]  = 32'b0;
+        i_mem[16]  = 32'b01001000110000010100000000000000;    //beq end
+        i_mem[17]  = 32'b0;
+        i_mem[18]  = 32'b0;
+        i_mem[19]  = 32'b0;
+        i_mem[20]  = 32'b00000000100001001000000000000000; //nop 
+        i_mem[21]  = 32'b0;
+        i_mem[22]  = 32'b0;
+        i_mem[23]  = 32'b0;
+        i_mem[24]  = 32'b00000000010010001100000000000000;    //nop 
+        i_mem[25]  = 32'b0;
+        i_mem[26]  = 32'b0;
+        i_mem[27]  = 32'b0; 
+        i_mem[28]  = 32'b00010000010010001100000000000000;   //cmp r0,1
+        i_mem[29]  = 32'b0;
+        i_mem[30]  = 32'b0;
+        i_mem[31]  = 32'b0;
+        i_mem[32]  = 32'b01001101000000000000000000000010;    //beq movr2
+        i_mem[33]  = 32'b0;
+        i_mem[34]  = 32'b0;
+        i_mem[35]  = 32'b0;
+        i_mem[36]  = 32'b10101000000000000000000000000000;    //nop
+        i_mem[37]  = 32'b0;
+        i_mem[38]  = 32'b0;
+        i_mem[39]  = 32'b0;
+        i_mem[40]  = 32'b01101000000000000000000000000000;    //nop
+        i_mem[41]  = 32'b0;
+        i_mem[42]  = 32'b0;
+        i_mem[43]  = 32'b0;
+        i_mem[44]  = 32'b01001100110000000000000000000010;  //mov r3,2
+        i_mem[45]  = 32'b0;
+        i_mem[46]  = 32'b0;
+        i_mem[47]  = 32'b0;
+        i_mem[48]  = 32'b00000001000001001000000000000000; //loop : add r4,r1,r2
+        i_mem[49]  = 32'b0;
+        i_mem[50]  = 32'b0;
+        i_mem[51]  = 32'b0;
+        i_mem[52]  = 32'b01001000010000001000000000000000; //mov r1,r2
+        i_mem[53]  = 32'b0;
+        i_mem[54]  = 32'b0;
+        i_mem[55]  = 32'b0;
+        i_mem[56]  = 32'b01001000100000010000000000000000; //mov r2,r4
+        i_mem[57]  = 32'b0;
+        i_mem[58]  = 32'b0;
+        i_mem[59]  = 32'b0;
+        i_mem[60]  = 32'b00000100110011000000000000000001; //add r3,r3,1
+        i_mem[61]  = 32'b0;
+        i_mem[62]  = 32'b0;
+        i_mem[63]  = 32'b0;
+        i_mem[64]  = 32'b00101000000000001100000000000000;  //cmp r0,r3
+        i_mem[68]  = 32'b10001111111111111111111111111011;  //bgt loop
+        i_mem[72]  = 32'b01101000000000000000000000000000;  //nop
+        i_mem[76]  = 32'b01101000000000000000000000000000; //nop
+        i_mem[80]  = 32'b01001000010000001000000000000000;  //mov r1,r2
+        i_mem[84]  = 32'b10010000000000000000000000000100;   //b end
+        i_mem[88]  = 32'b01101000000000000000000000000000;    //nop
+        i_mem[92]  = 32'b01101000000000000000000000000000;     //nop
+        i_mem[96]  = 32'b01001000010000001000000000000000;    //movr2 : mov r1,r2
+        i_mem[100]  = 32'b11111000000000000000000000000000;   //end : hlt
+       
+end
+
+always @(*)
+begin
+     instruction <= i_mem[address];     
+end
+endmodule
+
+
+
+
+module fetch_cycle(clk,rst,interrupt,pc_isr,add_stall,isbranchtaken_E,pc_branch_E,instruction_D,pc_D);
+input clk,rst;
+input isbranchtaken_E;
+input add_stall,interrupt;
+input [31:0]pc_branch_E,pc_isr;
+output  [31:0]instruction_D,pc_D;
+// Internal signals
+wire [31:0]pcnext_top,pc_top,instruction_top,pc_plus4_top;
+wire [3:0]RS1_top,RS2_top,RD_top,ra_top;
+
+// Pipeline registers
+reg [31:0]instruction_f,pc_f;
+
+// PC Selection MUX: Choose between sequential flow and branch target
+mux2x1 m1(.x(pc_plus4_top),.z(pc_branch_E),.sel(isbranchtaken_E ),.rst(rst),.y(pcnext_top) );
+// Program Counter Register
+program_counter pc(.clk(clk),.rst(rst),.interrupt(interrupt),.pc_isr(pc_isr),.add_stall(add_stall),.pcnext(pcnext_top),.pc(pc_top));
+// PC Increment Unit
+pc_plus4 pcplus4(.pc(pc_top),.pcplus4(pc_plus4_top));
+// Instruction Memory Interface
+instruction_memory im(.address(pc_top),.instruction(instruction_top));
+// Pipeline Register Update
+always @(posedge clk)
+begin
+    if(rst | isbranchtaken_E | interrupt)
+    begin
+    pc_f <= 32'd0;
+    instruction_f <= 32'b01101000000000000000000000000000;
+    end
+    else
+    begin
+    pc_f <= pc_top;
+    instruction_f <= instruction_top;  
+    end
+end
+
+// Output assignments with asynchronous reset override
+assign instruction_D = (rst == 1'b1) ? 32'b01101000000000000000000000000000 : instruction_f;
+assign pc_D = (rst == 1'b1) ? 32'h00000000 : pc_f;
+endmodule
